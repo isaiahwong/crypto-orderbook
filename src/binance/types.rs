@@ -1,6 +1,5 @@
+use crate::l2_book;
 use serde::{Deserialize, Serialize};
-
-use crate::orderbook_l2::{L2Order, L2Price, L2PriceSize, L2Size, Sequence};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DepthUpdate<'a> {
@@ -22,6 +21,28 @@ pub struct DepthUpdate<'a> {
     pub seq: DepthUpdateSeq,
 }
 
+impl<'a> From<&DepthUpdate<'a>> for DepthUpdateSeq {
+    fn from(val: &DepthUpdate<'a>) -> Self {
+        val.seq
+    }
+}
+
+impl<'a> From<DepthUpdate<'a>> for l2_book::Order<DepthUpdateSeq> {
+    fn from(val: DepthUpdate<'a>) -> Self {
+        let bids = val.bids.iter().cloned().map(Into::into).collect();
+        let asks = val.asks.iter().cloned().map(Into::into).collect();
+        let seq = val.seq;
+
+        l2_book::Order {
+            id: l2_book::Sequence(seq.last_update_id),
+            bids,
+            asks,
+            is_snapshot: false,
+            o: seq,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DepthUpdateSeq {
     #[serde(rename = "U")]
@@ -40,26 +61,19 @@ pub struct DepthUpdateSeq {
     pub transaction_time: u64,
 }
 
-impl<'a> From<&DepthUpdate<'a>> for DepthUpdateSeq {
-    fn from(val: &DepthUpdate<'a>) -> Self {
-        val.seq
-    }
-}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DepthSnapshot {
+    #[serde(rename = "lastUpdateId")]
+    pub last_update_id: u64,
 
-impl<'a> From<DepthUpdate<'a>> for L2Order<DepthUpdateSeq> {
-    fn from(val: DepthUpdate<'a>) -> Self {
-        let bids = val.bids.iter().cloned().map(Into::into).collect();
-        let asks = val.asks.iter().cloned().map(Into::into).collect();
-        let seq = val.seq;
+    #[serde(rename = "E")]
+    pub event_time: u64,
 
-        L2Order {
-            id: Sequence(seq.last_update_id),
-            bids,
-            asks,
-            is_snapshot: false,
-            o: seq,
-        }
-    }
+    #[serde(rename = "T")]
+    pub transaction_time: u64,
+
+    pub bids: Vec<PriceSize>,
+    pub asks: Vec<PriceSize>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -68,12 +82,14 @@ pub struct PriceSize(
     #[serde(with = "f64_to_u64")] pub u64, // size
 );
 
-impl From<PriceSize> for L2PriceSize {
+impl From<PriceSize> for l2_book::PriceSize {
     fn from(val: PriceSize) -> Self {
-        L2PriceSize(L2Price(val.0), L2Size(val.1))
+        l2_book::PriceSize(l2_book::Price(val.0), l2_book::Size(val.1))
     }
 }
 
+/// Serializer and Deserializer for converting float to u64
+/// Currently limited to precision of 1e10.
 pub(crate) mod f64_to_u64 {
     use serde::{Deserialize, Deserializer, Serializer, de};
 
@@ -106,17 +122,17 @@ pub(crate) mod f64_to_u64 {
     {
         #[derive(Deserialize)]
         #[serde(untagged)]
-        enum Num<'a> {
-            S(&'a str),
-            F(f64),
+        enum NumOrStr<'a> {
+            Str(&'a str),
+            Float(f64),
         }
 
-        match Num::deserialize(deserializer)? {
-            Num::S(s) => {
+        match NumOrStr::deserialize(deserializer)? {
+            NumOrStr::Str(s) => {
                 let f: f64 = s.parse().map_err(de::Error::custom)?;
                 f.to_u64()
             }
-            Num::F(f) => f.to_u64(),
+            NumOrStr::Float(f) => f.to_u64(),
         }
     }
 }

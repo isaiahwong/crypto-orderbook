@@ -1,4 +1,4 @@
-use crate::orderbook_l2::types::{Price, Size, ZERO_SIZE};
+use crate::l2_book::types::{Price, Size, ZERO_SIZE};
 
 use super::types::{Order, Sequence};
 use std::collections::{BTreeMap, VecDeque};
@@ -40,8 +40,7 @@ impl<O, S> BookFsm<O, S>
 where
     S: BookSequence<O>,
 {
-    #[allow(dead_code)]
-    fn new(sequence: S) -> Self {
+    pub fn new(sequence: S) -> Self {
         Self {
             buffer: VecDeque::with_capacity(100),
             state: BookState::Init,
@@ -140,7 +139,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::orderbook_l2::types::{Order, Sequence};
+    use crate::l2_book::types::{Order, Sequence};
 
     #[test]
     fn test_basic() {

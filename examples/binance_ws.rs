@@ -1,30 +1,32 @@
+use orderbook::binance::types::{DepthUpdate, DepthUpdateSeq};
 use orderbook::ws::connect;
+use serde_json;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
     let url = "wss://fstream.binance.com/ws/btcusdt@depth";
-    println!("Connecting to {}", url);
 
-    let mut rx = connect(url).await?;
+    let mut ws = connect(url).await?;
 
-    while let Some(mut msg) = rx.recv().await {
-        match simd_json::from_slice::<orderbook::binance::types::DepthUpdate<'_>>(&mut msg) {
+    let book = orderbook::binance::Book::new_um("BTCUSDT");
+
+    while let Some(res) = ws.rx.recv().await {
+        let json = match res {
+            Ok(msg) => msg,
+            Err(e) => {
+                eprintln!("Connection error: {}", e);
+                break;
+            }
+        };
+
+        match serde_json::from_slice::<DepthUpdate>(&json) {
             Ok(depth_update) => {
-                if depth_update.symbol == "BTCUSDT" && depth_update.event_type == "depthUpdate" {
-                    let order: orderbook::orderbook_l2::L2Order<
-                        orderbook::binance::types::DepthUpdateSeq,
-                    > = depth_update.into();
-                    println!("Received Order: {:?}", order.id);
-                }
+                let order: orderbook::l2_book::Order<DepthUpdateSeq> = depth_update.into();
+                book.update(order).await;
             }
             Err(e) => {
                 eprintln!("Error parsing message: {:?}", e);
-                // Also print the raw message for debugging valid UTF8 errors or partial fragments
-                if let Ok(s) = std::str::from_utf8(&msg) {
-                    println!("Raw (valid utf8): {}", s);
-                } else {
-                    println!("Raw (bytes): {:?}", msg);
-                }
             }
         }
     }
