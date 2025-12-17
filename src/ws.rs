@@ -16,6 +16,8 @@ pub struct WsHandle {
 }
 
 pub async fn connect(url: &str) -> Result<WsHandle, WsError> {
+    let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
+
     let url_parsed = Url::parse(url)?;
     let host = url_parsed.host_str().ok_or(WsError::MissingHost)?;
 

@@ -1,9 +1,9 @@
-use crate::l2_book::types::{Price, Size, ZERO_SIZE};
-
 use super::types::{Order, Sequence};
+use crate::l2_book::types::{Price, Size, ZERO_SIZE};
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, VecDeque};
 
-pub trait BookSequence<O> {
+pub trait BookSequencer<O> {
     fn is_first_event(&self, cur_seq: Sequence, update: &Order<O>) -> bool;
     fn is_stale(&self, cur_seq: Sequence, update: &Order<O>) -> bool;
     fn is_next(&self, cur_seq: Sequence, update: &Order<O>) -> bool;
@@ -24,30 +24,57 @@ enum BookState {
     Processing,
 }
 
-pub struct BookFsm<O, S>
-where
-    S: BookSequence<O>,
-{
+#[derive(Debug, Clone)]
+pub struct BookSnapshot {
+    pub asks: Vec<(Price, Size)>,
+    pub bids: Vec<(Price, Size)>,
+    pub ts_ms: u64,
+}
+
+impl BookSnapshot {
+    pub fn mid(&self) -> Price {
+        let best_bid = self.bids.first().map(|(p, _)| p.0).unwrap_or(0);
+        let best_ask = self.asks.first().map(|(p, _)| p.0).unwrap_or(0);
+
+        if best_bid == 0 || best_ask == 0 {
+            return Price(0);
+        }
+
+        Price((best_bid + best_ask) / 2)
+    }
+}
+
+pub struct BookFsm<O, S: BookSequencer<O>> {
     state: BookState,
     asks: BTreeMap<Price, Size>,
-    bids: BTreeMap<Price, Size>,
+    bids: BTreeMap<Reverse<Price>, Size>,
     buffer: VecDeque<Order<O>>,
     cur_sequence: Sequence,
     sequencer: S,
+    ts_ms: u64,
 }
 
 impl<O, S> BookFsm<O, S>
 where
-    S: BookSequence<O>,
+    S: BookSequencer<O>,
 {
-    pub fn new(sequence: S) -> Self {
+    pub fn new(sequencer: S) -> Self {
         Self {
             buffer: VecDeque::with_capacity(100),
             state: BookState::Init,
             asks: BTreeMap::new(),
             bids: BTreeMap::new(),
             cur_sequence: Sequence(0),
-            sequencer: sequence,
+            sequencer,
+            ts_ms: 0,
+        }
+    }
+
+    pub fn snapshot(&self, depth: usize) -> BookSnapshot {
+        BookSnapshot {
+            asks: self.asks.iter().take(depth).map(|(&p, &s)| (p, s)).collect(),
+            bids: self.bids.iter().take(depth).map(|(Reverse(p), &s)| (*p, s)).collect(),
+            ts_ms: self.ts_ms,
         }
     }
 
@@ -115,6 +142,8 @@ where
 
     fn apply_order(&mut self, order: &Order<O>) {
         self.cur_sequence = order.id;
+        self.ts_ms = order.ts_ms;
+
         if order.is_snapshot {
             self.asks.clear();
             self.bids.clear();
@@ -122,8 +151,8 @@ where
 
         for pxsz in order.bids.iter() {
             match pxsz.size() {
-                ZERO_SIZE => self.bids.remove(&pxsz.price()),
-                _ => self.bids.insert(pxsz.price(), pxsz.size()),
+                ZERO_SIZE => self.bids.remove(&Reverse(pxsz.price())),
+                _ => self.bids.insert(Reverse(pxsz.price()), pxsz.size()),
             };
         }
 
@@ -138,8 +167,10 @@ where
 
 #[cfg(test)]
 mod test {
+
     use super::*;
     use crate::l2_book::types::{Order, Sequence};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn test_basic() {
@@ -192,7 +223,7 @@ mod test {
 
     struct TestSequencer;
 
-    impl BookSequence<TestOrder> for TestSequencer {
+    impl BookSequencer<TestOrder> for TestSequencer {
         fn is_first_event(&self, cur_seq: Sequence, update: &Order<TestOrder>) -> bool {
             update.o.start_seq <= cur_seq && cur_seq <= update.o.end_seq
         }
@@ -212,6 +243,7 @@ mod test {
             bids: vec![],
             asks: vec![],
             is_snapshot,
+            ts_ms: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
             o,
         }
     }

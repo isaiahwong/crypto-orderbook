@@ -1,4 +1,5 @@
 use crate::l2_book;
+use crate::l2_book::types::f64_to_u64;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -38,6 +39,7 @@ impl<'a> From<DepthUpdate<'a>> for l2_book::Order<DepthUpdateSeq> {
             bids,
             asks,
             is_snapshot: false,
+            ts_ms: val.seq.transaction_time_ms,
             o: seq,
         }
     }
@@ -55,10 +57,10 @@ pub struct DepthUpdateSeq {
     pub previous_update_id: u64,
 
     #[serde(rename = "E")]
-    pub event_time: u64,
+    pub event_time_ms: u64,
 
     #[serde(rename = "T")]
-    pub transaction_time: u64,
+    pub transaction_time_ms: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -67,10 +69,10 @@ pub struct DepthSnapshot {
     pub last_update_id: u64,
 
     #[serde(rename = "E")]
-    pub event_time: u64,
+    pub event_time_ms: u64,
 
     #[serde(rename = "T")]
-    pub transaction_time: u64,
+    pub transaction_time_ms: u64,
 
     pub bids: Vec<PriceSize>,
     pub asks: Vec<PriceSize>,
@@ -88,68 +90,19 @@ impl From<PriceSize> for l2_book::PriceSize {
     }
 }
 
-/// Serializer and Deserializer for converting float to u64
-/// Currently limited to precision of 1e10.
-pub(crate) mod f64_to_u64 {
-    use serde::{Deserialize, Deserializer, Serializer, de};
-
-    trait ToU64<E: de::Error> {
-        fn to_u64(self) -> Result<u64, E>;
-    }
-
-    const FLOAT_SCALE: f64 = 10_000_000_000.0;
-    impl<D: de::Error> ToU64<D> for f64 {
-        fn to_u64(self) -> Result<u64, D> {
-            let n = (self * FLOAT_SCALE).floor();
-            if !n.is_finite() || n < 0.0 || n > u64::MAX as f64 {
-                return Err(de::Error::custom("cannot convert to u64, invalid float"));
-            }
-            Ok(n as u64)
-        }
-    }
-
-    pub fn serialize<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let f = (*value as f64) / FLOAT_SCALE;
-        serializer.serialize_f64(f)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<u64, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum NumOrStr<'a> {
-            Str(&'a str),
-            Float(f64),
-        }
-
-        match NumOrStr::deserialize(deserializer)? {
-            NumOrStr::Str(s) => {
-                let f: f64 = s.parse().map_err(de::Error::custom)?;
-                f.to_u64()
-            }
-            NumOrStr::Float(f) => f.to_u64(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::binance::types::{DepthUpdate, PriceSize};
 
     #[test]
     fn deserialize_depth_update() {
-        const FLOAT_SCALE: f64 = 10_000_000_000.0;
+        use crate::l2_book::types::FLOAT_SCALE;
         let d = r#"{"e":"depthUpdate","E":1571889248277,"T":1571889248276,"s":"BTCUSDT","U":390497796,"u":390497878,"pu":390497794,"b":[["7403.89","0.002"],["7403.90","3.906"],["7404.00","1.428"]],"a":[["7405.96","3.340"],["7406.63","4.525"],["7407.08","2.475"]]}"#;
         let depth_update: DepthUpdate = serde_json::from_str(d).unwrap();
 
         assert_eq!(depth_update.event_type, "depthUpdate");
-        assert_eq!(depth_update.seq.event_time, 1571889248277);
-        assert_eq!(depth_update.seq.transaction_time, 1571889248276);
+        assert_eq!(depth_update.seq.event_time_ms, 1571889248277);
+        assert_eq!(depth_update.seq.transaction_time_ms, 1571889248276);
         assert_eq!(depth_update.symbol, "BTCUSDT");
 
         let expected_bids = vec![

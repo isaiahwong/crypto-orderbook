@@ -2,11 +2,12 @@ use super::types::DepthUpdateSeq;
 use crate::binance::api::Rest;
 use crate::binance::api::UM;
 use crate::l2_book::tokio::{Book as AsyncBook, SnapshotFetcher};
-use crate::l2_book::{BookSequence, Order, PriceSize, Sequence};
+use crate::l2_book::{BookSequencer, Order, PriceSize, Sequence};
+use std::time::Duration;
 
-struct BinanceBookSequence;
+struct BinanceBookSequencer;
 
-impl BookSequence<DepthUpdateSeq> for BinanceBookSequence {
+impl BookSequencer<DepthUpdateSeq> for BinanceBookSequencer {
     fn is_first_event(&self, cur_seq: Sequence, update: &Order<DepthUpdateSeq>) -> bool {
         update.o.first_update_id <= cur_seq.val() && cur_seq.val() <= update.o.last_update_id
     }
@@ -37,8 +38,8 @@ impl<A: Rest + Sync> SnapshotFetcher<DepthUpdateSeq> for BinanceSnapshotFetcher<
             first_update_id: res.last_update_id,
             last_update_id: res.last_update_id,
             previous_update_id: res.last_update_id,
-            event_time: res.event_time,
-            transaction_time: res.transaction_time,
+            event_time_ms: res.event_time_ms,
+            transaction_time_ms: res.transaction_time_ms,
         };
 
         Ok(Order {
@@ -46,6 +47,7 @@ impl<A: Rest + Sync> SnapshotFetcher<DepthUpdateSeq> for BinanceSnapshotFetcher<
             bids,
             asks,
             is_snapshot: true,
+            ts_ms: seq.transaction_time_ms,
             o: seq,
         })
     }
@@ -54,11 +56,13 @@ impl<A: Rest + Sync> SnapshotFetcher<DepthUpdateSeq> for BinanceSnapshotFetcher<
 pub struct Book;
 
 impl Book {
-    pub fn new_um(symbol: impl Into<String>) -> AsyncBook<DepthUpdateSeq> {
+    pub fn new_um(symbol: impl Into<String>, depth: usize, interval: Duration) -> AsyncBook<DepthUpdateSeq> {
         AsyncBook::new(
             symbol.into(),
-            BinanceBookSequence,
+            BinanceBookSequencer,
             BinanceSnapshotFetcher { api: UM },
+            depth,
+            interval,
         )
     }
 }

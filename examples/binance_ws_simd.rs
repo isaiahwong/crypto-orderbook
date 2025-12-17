@@ -1,6 +1,5 @@
 use orderbook::binance::types::DepthUpdate;
 use orderbook::ws::connect;
-use serde_json;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[tokio::main]
@@ -15,7 +14,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tokio::spawn(async move {
         loop {
             let Some(res) = ws.rx.recv().await else { break };
-            let json = match res {
+
+            let mut json = match res {
                 Ok(msg) => msg,
                 Err(e) => {
                     eprintln!("Connection error: {}", e);
@@ -23,7 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
             };
 
-            match serde_json::from_slice::<DepthUpdate>(&json) {
+            match simd_json::from_slice::<DepthUpdate>(&mut json) {
                 Ok(depth_update) => {
                     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
                     let latency = now - depth_update.seq.event_time_ms;
