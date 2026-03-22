@@ -1,15 +1,15 @@
-use orderbook::binance::types::DepthUpdate;
-use orderbook::ws::connect;
+use connector::binance::types::DepthUpdate;
+use connector::ws::connect;
 use serde_json;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
-    let url = "wss://fstream.binance.com/ws/btcusdt@depth";
+    let url = "wss://fstream.binance.com/ws/btcusdt@depth@0ms";
     let mut ws = connect(url).await?;
 
-    let mut book = orderbook::binance::Book::new_um("BTCUSDT", 1000, Duration::from_millis(0));
+    let mut book = connector::binance::Book::new_um("BTCUSDT", 110000);
 
     let writer = book.writer();
     tokio::spawn(async move {
@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let latency = now - depth_update.seq.event_time_ms;
                     println!("Received depth update latency: {}ms", latency);
 
-                    writer.update(depth_update.into()).await;
+                    writer.send(depth_update.into()).await;
                 }
                 Err(e) => {
                     eprintln!("Error parsing message: {:?}", e);

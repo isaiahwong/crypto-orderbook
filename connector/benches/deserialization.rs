@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use orderbook::binance::types::{DepthUpdate, DepthUpdateSeq, PriceSize};
+use connector::binance::types::{DepthUpdate, DepthUpdateSeq, PriceSize};
 use serde::{Deserialize, Serialize};
 
 /// Bids Asks as is, without [f64_to_u64] deserializer

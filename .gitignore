@@ -4,6 +4,10 @@
 # Allow directories
 !src/
 !src/**
+!connector/
+!connector/**
+!tui/
+!tui/**
 !examples/
 !examples/**
 !benches/

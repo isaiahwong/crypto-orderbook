@@ -56,13 +56,7 @@ impl<A: Rest + Sync> SnapshotFetcher<DepthUpdateSeq> for BinanceSnapshotFetcher<
 pub struct Book;
 
 impl Book {
-    pub fn new_um(symbol: impl Into<String>, depth: usize, interval: Duration) -> AsyncBook<DepthUpdateSeq> {
-        AsyncBook::new(
-            symbol.into(),
-            BinanceBookSequencer,
-            BinanceSnapshotFetcher { api: UM },
-            depth,
-            interval,
-        )
+    pub fn new_um(symbol: impl Into<String>, depth: usize) -> AsyncBook<DepthUpdateSeq> {
+        AsyncBook::new(symbol.into(), BinanceBookSequencer, BinanceSnapshotFetcher { api: UM }, depth)
     }
 }

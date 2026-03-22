@@ -39,6 +39,13 @@ cargo run --example binance_ws
 cargo run --example binance_ws_simd 
 ```
 
+### Running TUI
+
+Live candlestick chart and orderbook for BTCUSDT.
+```bash
+cargo run -p tui
+```
+
 ## Benchmarks
 
 **Result**: `serde_json` can be faster for small payloads such as crypto websocket feed. 

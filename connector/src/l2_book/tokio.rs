@@ -5,7 +5,7 @@ use super::types::Order;
 use std::future::Future;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use tokio::time::{Duration, Instant};
+use tokio::time::Instant;
 
 pub trait SnapshotFetcher<O> {
     type Error: std::fmt::Debug + Send;
@@ -26,11 +26,9 @@ where
     fsm: BookFsm<O, S>,
     fetcher: F,
     symbol: String,
-    pub_interval: Duration,
-    pub_at: Option<Instant>,
-    snap_at: Option<Instant>,
+    snapshot_at: Option<Instant>,
     book_msg_rx: mpsc::Receiver<BookMessage<O>>,
-    book_pub_tx: mpsc::Sender<BookSnapshot>,
+    book_snap_tx: mpsc::Sender<BookSnapshot>,
     depth: usize,
 }
 
@@ -45,19 +43,16 @@ where
         sequencer: S,
         fetcher: F,
         depth: usize,
-        pub_interval: Duration,
         book_msg_rx: mpsc::Receiver<BookMessage<O>>,
-        book_pub_tx: mpsc::Sender<BookSnapshot>,
+        book_snap_tx: mpsc::Sender<BookSnapshot>,
     ) -> Self {
         Self {
             fsm: BookFsm::new(sequencer),
             fetcher,
             symbol,
-            pub_interval,
-            pub_at: None,
-            snap_at: None,
+            snapshot_at: None,
             book_msg_rx,
-            book_pub_tx,
+            book_snap_tx,
             depth,
         }
     }
@@ -75,7 +70,7 @@ where
 
     async fn on_update(&mut self, mut order: Order<O>) {
         while let BookAction::RetrieveSnapshot = self.fsm.update(order) {
-            self.snap_at = None;
+            self.snapshot_at = None;
 
             match self.fetcher.fetch_snapshot(&self.symbol).await {
                 Ok(snapshot) => order = snapshot,
@@ -86,29 +81,14 @@ where
                 }
             };
 
-            self.snap_at = Some(Instant::now());
+            self.snapshot_at = Some(Instant::now());
         }
 
-        self.publish().await
-    }
-
-    async fn publish(&mut self) {
-        let Some(snap_at) = self.snap_at else { return };
-
-        let pub_at = *self.pub_at.get_or_insert(snap_at) + self.pub_interval;
-        let now = Instant::now();
-
-        if now < pub_at {
-            return;
-        }
-
-        // publish
-        match self.book_pub_tx.send(self.fsm.snapshot(self.depth)).await {
+        // Publish
+        match self.book_snap_tx.send(self.fsm.snapshot(self.depth)).await {
             Ok(_) => (),
             Err(_) => return,
         }
-
-        self.pub_at = Some(pub_at)
     }
 }
 
@@ -122,7 +102,7 @@ impl<O> Book<O>
 where
     O: Send + 'static,
 {
-    pub fn new<S, F>(symbol: String, sequence: S, fetcher: F, depth: usize, interval: Duration) -> Self
+    pub fn new<S, F>(symbol: String, sequence: S, fetcher: F, depth: usize) -> Self
     where
         S: BookSequencer<O> + Send + 'static,
         F: SnapshotFetcher<O> + Send + 'static,
@@ -130,7 +110,7 @@ where
         let (book_msg_tx, book_msg_rx) = mpsc::channel(50);
         let (book_pub_tx, book_pub_rx) = mpsc::channel(1000);
 
-        let processor = BookProcessor::new(symbol, sequence, fetcher, depth, interval, book_msg_rx, book_pub_tx);
+        let processor = BookProcessor::new(symbol, sequence, fetcher, depth, book_msg_rx, book_pub_tx);
         tokio::spawn(processor.run());
 
         Self { book_msg_tx, book_pub_rx }
@@ -156,7 +136,7 @@ impl<O> BookWriter<O>
 where
     O: Send + 'static,
 {
-    pub async fn update(&self, order: Order<O>) {
+    pub async fn send(&self, order: Order<O>) {
         let _ = self.tx.send(BookMessage::Update(order)).await;
     }
 }
