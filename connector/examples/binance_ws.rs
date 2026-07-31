@@ -1,6 +1,5 @@
 use connector::binance::types::DepthUpdate;
 use connector::ws::connect;
-use serde_json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[tokio::main]

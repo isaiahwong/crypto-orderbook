@@ -1,5 +1,7 @@
 # Crypto Orderbook
 
+![TUI](docs/screenshot.png)
+
 In-progress project serving as a launchpad for learning Rust and systems programming. The goal is to implement a runtime-agnostic, local-orderbook for crypto exchanges.
 
 ## Quick Start
@@ -41,7 +43,7 @@ cargo run --example binance_ws_simd
 
 ### Running TUI
 
-Live candlestick chart and orderbook for BTCUSDT.
+Live candlestick chart and orderbook for BTCUSDT. Press `q` to quit.
 ```bash
 cargo run -p tui
 ```

@@ -4,6 +4,8 @@
 # Allow directories
 !src/
 !src/**
+!docs/
+!docs/**
 !connector/
 !connector/**
 !tui/

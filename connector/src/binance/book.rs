@@ -3,7 +3,6 @@ use crate::binance::api::Rest;
 use crate::binance::api::UM;
 use crate::l2_book::tokio::{Book as AsyncBook, SnapshotFetcher};
 use crate::l2_book::{BookSequencer, Order, PriceSize, Sequence};
-use std::time::Duration;
 
 struct BinanceBookSequencer;
 

@@ -9,6 +9,8 @@ use tokio::sync::mpsc::channel;
 use types::Message;
 use ws::run;
 
+const SYMBOL: &str = "btcusdt";
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     crypto::ring::default_provider()
@@ -20,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     // ws
     tokio::spawn(async move {
         loop {
-            if let Err(e) = run("btcusdt".to_string(), tx.clone()).await {
+            if let Err(e) = run(SYMBOL.to_string(), tx.clone()).await {
                 eprintln!("WebSocket error: {:?}", e);
             }
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -28,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // tui
-    ui::App::new(rx)?.run().await?;
+    ui::App::new(SYMBOL, rx)?.run().await?;
 
     Ok(())
 }

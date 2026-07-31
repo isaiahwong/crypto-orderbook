@@ -2,7 +2,6 @@ use fastwebsockets::{Frame, OpCode, Payload};
 use http_body_util::Empty;
 use hyper::body::Bytes;
 use hyper_util::rt::TokioExecutor;
-use std::fmt;
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
@@ -145,74 +144,22 @@ async fn tls_connect(host: &str, tcp_stream: TcpStream) -> Result<TlsStream<TcpS
     Ok(connector.connect(domain, tcp_stream).await?)
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum WsError {
-    UrlParse(url::ParseError),
-    Io(std::io::Error),
-    Tls(tokio_rustls::rustls::Error),
+    #[error("Invalid URL: {0}")]
+    UrlParse(#[from] url::ParseError),
+    #[error("IO Error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("TLS Error: {0}")]
+    Tls(#[from] tokio_rustls::rustls::Error),
+    #[error("Invalid DNS name: {0}")]
     InvalidDns(String),
-    Http(http::Error),
-    WebSocket(fastwebsockets::WebSocketError),
+    #[error("HTTP Error: {0}")]
+    Http(#[from] http::Error),
+    #[error("WebSocket Error: {0}")]
+    WebSocket(#[from] fastwebsockets::WebSocketError),
+    #[error("No host in URL")]
     MissingHost,
+    #[error("Handshake failed: {0}")]
     Handshake(String),
-}
-
-impl fmt::Display for WsError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            WsError::UrlParse(e) => write!(f, "Invalid URL: {}", e),
-            WsError::Io(e) => write!(f, "IO Error: {}", e),
-            WsError::Tls(e) => write!(f, "TLS Error: {}", e),
-            WsError::InvalidDns(e) => write!(f, "Invalid DNS name: {}", e),
-            WsError::Http(e) => write!(f, "HTTP Error: {}", e),
-            WsError::WebSocket(e) => write!(f, "WebSocket Error: {}", e),
-            WsError::MissingHost => write!(f, "No host in URL"),
-            WsError::Handshake(e) => write!(f, "Handshake failed: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for WsError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            WsError::UrlParse(e) => Some(e),
-            WsError::Io(e) => Some(e),
-            WsError::Tls(e) => Some(e),
-            WsError::InvalidDns(_) => None,
-            WsError::Http(e) => Some(e),
-            WsError::WebSocket(e) => Some(e),
-            WsError::MissingHost => None,
-            WsError::Handshake(_) => None,
-        }
-    }
-}
-
-impl From<url::ParseError> for WsError {
-    fn from(e: url::ParseError) -> Self {
-        WsError::UrlParse(e)
-    }
-}
-
-impl From<std::io::Error> for WsError {
-    fn from(e: std::io::Error) -> Self {
-        WsError::Io(e)
-    }
-}
-
-impl From<tokio_rustls::rustls::Error> for WsError {
-    fn from(e: tokio_rustls::rustls::Error) -> Self {
-        WsError::Tls(e)
-    }
-}
-
-impl From<http::Error> for WsError {
-    fn from(e: http::Error) -> Self {
-        WsError::Http(e)
-    }
-}
-
-impl From<fastwebsockets::WebSocketError> for WsError {
-    fn from(e: fastwebsockets::WebSocketError) -> Self {
-        WsError::WebSocket(e)
-    }
 }

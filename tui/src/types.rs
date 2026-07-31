@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 pub type Side = Vec<(f64, f64)>;
 
+const MAX_CANDLES: usize = 500;
+
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct BookSnapshot {
     pub bids: Side,
@@ -31,40 +33,38 @@ impl Candle {
 pub struct Candles(VecDeque<Candle>);
 
 impl Candles {
-    pub fn replace(&mut self, candles: VecDeque<Candle>) {
-        self.0 = candles
-    }
-
-    pub fn push_back(&mut self, candle: Candle) {
-        self.0.push_back(candle);
-    }
-
-    pub fn pop_front(&mut self) -> Option<Candle> {
-        self.0.pop_front()
-    }
-
-    pub fn back(&self) -> Option<&Candle> {
-        self.0.back()
-    }
-
-    pub fn back_mut(&mut self) -> Option<&mut Candle> {
-        self.0.back_mut()
-    }
-
+    /// Replaces newest candle on timestamp match, else appends and drops oldest.
     pub fn upsert(&mut self, candle: Candle) {
-        if let Some(existing) = self.back_mut().filter(|c| c.timestamp == candle.timestamp) {
+        if let Some(existing) = self.0.back_mut().filter(|c| c.timestamp == candle.timestamp) {
             *existing = candle;
             return;
         }
 
         self.0.push_back(candle);
-        if self.0.len() > 500 {
-            self.0.pop_back();
+        if self.0.len() > MAX_CANDLES {
+            self.0.pop_front();
         }
     }
 
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    pub fn last_price(&self) -> f64 {
+        self.0.back().map(|c| c.close).unwrap_or(0.0)
+    }
+
+    /// Percent move from the oldest candle's open to the latest close.
+    pub fn pct_change(&self) -> f64 {
+        let (Some(first), Some(last)) = (self.0.front(), self.0.back()) else {
+            return 0.0;
+        };
+
+        if first.open == 0.0 {
+            return 0.0;
+        }
+
+        (last.close - first.open) / first.open * 100.0
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Candle> {
@@ -97,10 +97,6 @@ pub struct Orderbook {
 }
 
 impl Orderbook {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn bids(&self, limit: usize) -> SideSnapshot {
         self.snapshot_side(&self.bids, limit)
     }

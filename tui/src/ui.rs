@@ -4,12 +4,16 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use futures_util::StreamExt;
-use ratatui::{Terminal, prelude::*};
+use ratatui::{
+    Terminal,
+    prelude::*,
+    widgets::{Block, Borders, Paragraph},
+};
 use std::io::{self, stdout};
 use tokio::sync::mpsc::Receiver;
 
 use crate::{
-    candle::CandleChart,
+    candle::{CandleChart, GREEN},
     types::{Candles, Message, Orderbook},
 };
 
@@ -22,14 +26,16 @@ pub struct State {
 
 pub struct App {
     rx: Receiver<Result<Message, anyhow::Error>>,
+    symbol: String,
     quit: bool,
     state: State,
 }
 
 impl App {
-    pub fn new(rx: Receiver<Result<Message, anyhow::Error>>) -> anyhow::Result<Self> {
+    pub fn new(symbol: impl Into<String>, rx: Receiver<Result<Message, anyhow::Error>>) -> anyhow::Result<Self> {
         Ok(Self {
             rx,
+            symbol: symbol.into(),
             quit: false,
             state: State::default(),
         })
@@ -73,11 +79,10 @@ impl App {
 
     fn on_events(&mut self, event: Event) {
         match event {
-            Event::Key(key) => {
-                if key.kind == KeyEventKind::Press && key.code == KeyCode::Char('q') {
-                    self.quit = true;
-                }
-            }
+            Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
+                _ => {}
+            },
             Event::Mouse(mouse_event) => {
                 self.state.mouse_event = Some(mouse_event);
             }
@@ -95,18 +100,7 @@ impl App {
                 self.state.candles = klines.into();
             }
             Message::Candle(candle) => {
-                if let Some(last) = self.state.candles.back_mut() {
-                    if last.timestamp == candle.timestamp {
-                        *last = candle;
-                    } else {
-                        self.state.candles.push_back(candle);
-                        if self.state.candles.len() > 500 {
-                            self.state.candles.pop_front();
-                        }
-                    }
-                } else {
-                    self.state.candles.push_back(candle);
-                }
+                self.state.candles.upsert(candle);
             }
         }
     }
@@ -121,7 +115,52 @@ impl App {
             .constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3)])
             .split(f.area());
 
+        self.render_header(f, layout[0]);
         self.render_content(f, layout[1]);
+        self.render_footer(f, layout[2]);
+    }
+
+    fn render_header(&self, f: &mut Frame, area: Rect) {
+        let price = self.state.candles.last_price();
+        let pct = self.state.candles.pct_change();
+
+        let pct_color = if pct > 0.0 {
+            GREEN
+        } else if pct < 0.0 {
+            Color::Red
+        } else {
+            Color::White
+        };
+
+        let line = Line::from(vec![
+            Span::raw(" Last: "),
+            Span::styled(format!("{price:.2}"), Style::default().fg(Color::Yellow)),
+            Span::raw("   "),
+            Span::styled(format!("{pct:+.2}%"), Style::default().fg(pct_color)),
+        ]);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray))
+            .title(Span::styled(
+                self.symbol.to_uppercase(),
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            ));
+
+        f.render_widget(Paragraph::new(line).block(block), area);
+    }
+
+    fn render_footer(&self, f: &mut Frame, area: Rect) {
+        let key = Style::default().fg(Color::Black).bg(Color::Gray);
+        let label = Style::default().fg(Color::Gray);
+
+        let line = Line::from(vec![Span::raw(" "), Span::styled(" q ", key), Span::styled(" quit", label)]);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray));
+
+        f.render_widget(Paragraph::new(line).block(block), area);
     }
 
     fn render_content(&self, f: &mut Frame, area: Rect) {

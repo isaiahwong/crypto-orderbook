@@ -11,7 +11,7 @@ use ratatui::{
 
 use crate::types::{Candle, Candles};
 
-const GREEN: Color = Color::Rgb(94, 186, 137);
+pub const GREEN: Color = Color::Rgb(94, 186, 137);
 
 pub struct CandleChart<'a> {
     candles: &'a Candles,
